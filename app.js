@@ -568,23 +568,23 @@ function submitOrder() {
   if (paymentMethod === "UPI / Scan QR" && fileInput.files[0]) {
     compressImage(fileInput.files[0], 800, 1000, 0.8) // High resolution compression
       .then(compressedBase64 => {
-        processSubmitOrder(orderId, khetra, custName, custMobile, custEmail, compressedBase64, activeItems, totalQty, grandTotal);
+        processSubmitOrder(orderId, khetra, custName, custMobile, custEmail, paymentMethod, compressedBase64, activeItems, totalQty, grandTotal);
       })
       .catch(err => {
         console.error("Compression failed, using original:", err);
         const reader = new FileReader();
         reader.onload = function(e) {
-          processSubmitOrder(orderId, khetra, custName, custMobile, custEmail, e.target.result, activeItems, totalQty, grandTotal);
+          processSubmitOrder(orderId, khetra, custName, custMobile, custEmail, paymentMethod, e.target.result, activeItems, totalQty, grandTotal);
         };
         reader.readAsDataURL(fileInput.files[0]);
       });
   } else {
-    processSubmitOrder(orderId, khetra, custName, custMobile, custEmail, null, activeItems, totalQty, grandTotal);
+    processSubmitOrder(orderId, khetra, custName, custMobile, custEmail, paymentMethod, null, activeItems, totalQty, grandTotal);
   }
 }
 
 // Process the order saving
-function processSubmitOrder(orderId, khetra, custName, custMobile, custEmail, screenshotBase64, activeItems, totalQty, grandTotal) {
+function processSubmitOrder(orderId, khetra, custName, custMobile, custEmail, paymentMethod, screenshotBase64, activeItems, totalQty, grandTotal) {
   let tbodyHTML = "";
   activeItems.forEach(item => {
     let displayName = `${item.productName} (${item.category})`;
