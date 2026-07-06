@@ -91,7 +91,7 @@ let activeOrderId = "";
 let isAdminLoggedIn = false;
 
 // Google Apps Script Web App URL for sending email receipts & saving to Google Sheet
-const googleScriptURL = "https://script.google.com/macros/s/AKfycbxtPuhBKquUi2o1mG0AwQKZBfvQMzl934xMIu_m3Ds-0rCPIAONQ7uJUxH5KX0KZNgfuw/exec";
+const googleScriptURL = "https://script.google.com/macros/s/AKfycbz1uQUfOl_SFFgAwZ7__RRFjPYC1tUqFPhYeq3OqEGy5G4QpH_jTiA6pUj9XdIuzJHReA/exec";
 
 // Open/initialize IndexedDB for storing payment screenshots safely (unlimited quota)
 let db;
@@ -411,12 +411,133 @@ function toggleAdminAccess() {
       isAdminLoggedIn = true;
       if (adminHistorySection) adminHistorySection.style.display = "block";
       if (adminToggleBtn) adminToggleBtn.innerText = "Close Admin Portal";
-      updateHistoryTable();
-      alert("Admin Access Granted!");
+      fetchHistoryFromGoogle();
+      alert("Admin Access Granted! Loading orders from Google Sheets...");
     } else if (pass !== null) {
       alert("Incorrect passcode!");
     }
   }
+}
+
+// Fetch master order history from Google Sheets
+function fetchHistoryFromGoogle() {
+  const tbody = document.getElementById("history-table-body");
+  if (!tbody) return;
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="10" style="text-align: center; color: var(--text-light); padding: 20px;">
+        <span style="display: inline-block; width: 20px; height: 20px; border: 2px solid #ccc; border-top-color: var(--secondary-color); border-radius: 50%; animation: spin 1s linear infinite; margin-right: 10px; vertical-align: middle;"></span>
+        Loading master orders from Google Sheets...
+      </td>
+    </tr>
+  `;
+
+  if (!googleScriptURL) {
+    // Fallback to local storage if URL not configured
+    updateHistoryTable();
+    return;
+  }
+
+  fetch(googleScriptURL)
+    .then(response => response.json())
+    .then(orders => {
+      renderHistoryTable(orders);
+    })
+    .catch(err => {
+      console.error("Failed to fetch order history from Google Sheets:", err);
+      // Fallback to local storage
+      updateHistoryTable();
+    });
+}
+
+// Render history table using Google Sheets data (synchronized across devices)
+function renderHistoryTable(orders) {
+  const tbody = document.getElementById("history-table-body");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  if (orders.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="10" style="text-align: center; color: var(--text-light);">No orders found in Google Sheets.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  orders.forEach(order => {
+    const row = document.createElement("tr");
+    
+    // Screenshot cell
+    let screenshotHTML = "-";
+    if (order.screenshotUrl && order.screenshotUrl !== "-") {
+      screenshotHTML = `<a href="${order.screenshotUrl}" target="_blank" style="color: var(--secondary-color); font-weight: bold; text-decoration: underline;">View Receipt</a>`;
+    }
+    
+    row.innerHTML = `
+      <td>${order.id}</td>
+      <td>${order.khetra || ""}</td>
+      <td>${order.customer}</td>
+      <td>${order.mobile}</td>
+      <td>${order.email || "-"}</td>
+      <td>${order.paymentMethod || "Cash on Delivery"}</td>
+      <td style="text-align: center;">${screenshotHTML}</td>
+      <td>${order.qty} packs</td>
+      <td>₹${order.total.toFixed(2)}</td>
+      <td class="action-links">
+        <span class="action-link" onclick="viewHistoryDetail('${order.id}', '${order.customer}', '${order.mobile}', '${order.email}', '${order.khetra}', '${order.paymentMethod}', '${order.total}', \`${order.itemsText || ''}\`)">View Detail</span>
+      </td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+// View order receipt modal for synced Google Sheets orders
+function viewHistoryDetail(orderId, customer, mobile, email, khetra, paymentMethod, total, itemsText) {
+  let tbodyHTML = "";
+  const lines = itemsText.split("\n");
+  lines.forEach(line => {
+    if (line.trim()) {
+      tbodyHTML += `
+        <tr>
+          <td colspan="3">${line.trim()}</td>
+          <td colspan="2" style="text-align: right;">-</td>
+        </tr>`;
+    }
+  });
+
+  const detailHTML = `
+    <div class="bill-container">
+      <h2 class="bill-title">Order Receipt</h2>
+      <p class="bill-details">
+        <strong>Order ID:</strong> ${orderId}<br>
+        <strong>Name:</strong> ${customer}<br>
+        <strong>Mobile:</strong> ${mobile}<br>
+        <strong>Email:</strong> ${email}<br>
+        <strong>Khetra:</strong> ${khetra}<br>
+        <strong>Payment Method:</strong> ${paymentMethod}
+      </p>
+      <table class="bill-table" border="1" cellpadding="6" cellspacing="0" style="width:100%; border-collapse: collapse;">
+        <thead style="background-color: #f2f2f2;">
+          <tr>
+            <th colspan="3">Product Details</th>
+            <th colspan="2" style="text-align: right;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tbodyHTML}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3" style="text-align: right;"><strong>Total</strong></td>
+            <td colspan="2" style="text-align: right;"><strong>₹${Number(total).toFixed(2)}</strong></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  `;
+  document.getElementById("modal-bill-body").innerHTML = detailHTML;
+  document.getElementById("bill-modal").style.display = "flex";
 }
 
 // Compress payment screenshot image before saving to localStorage
@@ -747,7 +868,7 @@ function updateHistoryTable() {
   if (orderHistory.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="9" style="text-align: center; color: var(--text-light);">No orders placed in this session.</td>
+        <td colspan="10" style="text-align: center; color: var(--text-light);">No orders placed in this session.</td>
       </tr>
     `;
     return;
@@ -764,6 +885,7 @@ function updateHistoryTable() {
       <td>${order.khetra || order.taker || ""}</td>
       <td>${order.customer}</td>
       <td>${order.mobile}</td>
+      <td>${order.email || "-"}</td>
       <td>${order.paymentMethod || "Cash on Delivery"}</td>
       <td style="text-align: center;" id="${screenshotCellId}">-</td>
       <td>${order.qty} packs</td>
