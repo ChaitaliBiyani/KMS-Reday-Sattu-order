@@ -647,3 +647,42 @@ header p {
     margin: 0;
   }
 }
+
+/* Color differentiation for READY and SIKA */
+.tab-btn.ready-tab.active {
+  background: white;
+  color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.1);
+  border-bottom: 3px solid var(--primary-color);
+  border-radius: 8px 8px 0 0;
+}
+
+.tab-btn.sika-tab.active {
+  background: white;
+  color: var(--secondary-color);
+  box-shadow: 0 4px 12px rgba(6, 95, 70, 0.1);
+  border-bottom: 3px solid var(--secondary-color);
+  border-radius: 8px 8px 0 0;
+}
+
+.product-category-tag.tag-ready {
+  background: rgba(217, 119, 6, 0.1) !important;
+  color: var(--primary-color) !important;
+}
+
+.product-category-tag.tag-sika {
+  background: rgba(6, 95, 70, 0.1) !important;
+  color: var(--secondary-color) !important;
+}
+
+.counter-ready .qty-btn:hover {
+  background: var(--primary-color) !important;
+  color: white !important;
+  border-color: var(--primary-color) !important;
+}
+
+.counter-sika .qty-btn:hover {
+  background: var(--secondary-color) !important;
+  color: white !important;
+  border-color: var(--secondary-color) !important;
+}

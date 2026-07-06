@@ -88,6 +88,7 @@ let cart = {}; // maps key `productId|sizeLabel` to qty
 let orderHistory = [];
 let currentGeneratedHTML = "";
 let activeOrderId = "";
+let isAdminLoggedIn = false;
 
 // Khetra payment QR codes map
 const khetraQRCodes = {
@@ -161,6 +162,7 @@ function createProductCard(prod) {
   card.className = "product-card";
 
   let optionsHTML = "";
+  const isReady = prod.category === 'READY ATTA SATTU';
   prod.options.forEach((opt, idx) => {
     const inputId = `${prod.id}_${opt.label.replace(/\s+/g, '')}`;
     const isLast = idx === prod.options.length - 1;
@@ -171,7 +173,7 @@ function createProductCard(prod) {
             <span class="size-label">${opt.label}</span>
             <span class="size-price">₹${opt.price}</span>
           </div>
-          <div class="qty-counter">
+          <div class="qty-counter ${isReady ? 'counter-ready' : 'counter-sika'}">
             <button class="qty-btn" type="button" onclick="updateQty('${prod.id}', '${opt.label}', -1)">-</button>
             <input type="number" class="qty-input" id="${inputId}" value="0" min="0" onchange="setQty('${prod.id}', '${opt.label}', this.value)">
             <button class="qty-btn" type="button" onclick="updateQty('${prod.id}', '${opt.label}', 1)">+</button>
@@ -185,7 +187,7 @@ function createProductCard(prod) {
   card.innerHTML = `
     <div class="product-header">
       <h3 class="product-name">${prod.name}</h3>
-      <span class="product-category-tag">${prod.category.split(' ')[0]}</span>
+      <span class="product-category-tag ${isReady ? 'tag-ready' : 'tag-sika'}">${prod.category.split(' ')[0]}</span>
     </div>
     <div class="size-option-list">
       ${optionsHTML}
@@ -323,14 +325,60 @@ function calculateTotals() {
   document.getElementById("grand-total").innerText = `₹${grandTotal.toFixed(2)}`;
 }
 
-// Generate the HTML Bill
-function generateBill() {
+// Toggle UPI payment screenshot group
+function togglePaymentScreenshot() {
+  const method = document.getElementById("payment-method").value;
+  const screenshotGroup = document.getElementById("screenshot-group");
+  if (screenshotGroup) {
+    if (method === "UPI / Scan QR") {
+      screenshotGroup.style.display = "block";
+    } else {
+      screenshotGroup.style.display = "none";
+      const fileInput = document.getElementById("payment-screenshot");
+      if (fileInput) fileInput.value = "";
+    }
+  }
+}
+
+// Admin passcode lock control
+function toggleAdminAccess() {
+  const adminToggleBtn = document.getElementById("admin-toggle-btn");
+  const adminHistorySection = document.getElementById("admin-history-section");
+  
+  if (isAdminLoggedIn) {
+    // Log out
+    isAdminLoggedIn = false;
+    if (adminHistorySection) adminHistorySection.style.display = "none";
+    if (adminToggleBtn) adminToggleBtn.innerText = "View Order History (Admin)";
+    alert("Admin logged out.");
+  } else {
+    const pass = prompt("Enter Admin Passcode:");
+    if (pass === "admin123") {
+      isAdminLoggedIn = true;
+      if (adminHistorySection) adminHistorySection.style.display = "block";
+      if (adminToggleBtn) adminToggleBtn.innerText = "Close Admin Portal";
+      updateHistoryTable();
+      alert("Admin Access Granted!");
+    } else if (pass !== null) {
+      alert("Incorrect passcode!");
+    }
+  }
+}
+
+// Submit the Order (replaces generateBill)
+function submitOrder() {
   const khetra = document.getElementById("khetra").value;
   const custName = document.getElementById("customer-name").value.trim();
   const custMobile = document.getElementById("customer-mobile").value.trim();
+  const paymentMethod = document.getElementById("payment-method").value;
+  const fileInput = document.getElementById("payment-screenshot");
 
   if (!custName) {
     alert("Please enter Customer Name.");
+    return;
+  }
+  if (!custMobile) {
+    alert("Please enter Mobile Number.");
     return;
   }
 
@@ -354,7 +402,7 @@ function generateBill() {
     return;
   }
 
-  // Count active items
+  // Count active items and totals
   let activeItems = [];
   let grandTotal = 0;
   let totalQty = 0;
@@ -402,11 +450,31 @@ function generateBill() {
     return;
   }
 
-  // Generate HTML matching original sheet structure
+  // Validate UPI payment screenshot
+  if (paymentMethod === "UPI / Scan QR" && (!fileInput.files || !fileInput.files[0])) {
+    alert("Please attach a payment screenshot for UPI/QR Code payments.");
+    return;
+  }
+
+  const orderId = "ORD-" + Math.floor(100000 + Math.random() * 900000);
+
+  // If there is a file, read it as base64
+  if (paymentMethod === "UPI / Scan QR" && fileInput.files[0]) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const base64Data = e.target.result;
+      processSubmitOrder(orderId, khetra, custName, custMobile, paymentMethod, base64Data, activeItems, totalQty, grandTotal);
+    };
+    reader.readAsDataURL(fileInput.files[0]);
+  } else {
+    processSubmitOrder(orderId, khetra, custName, custMobile, paymentMethod, null, activeItems, totalQty, grandTotal);
+  }
+}
+
+// Process the order saving
+function processSubmitOrder(orderId, khetra, custName, custMobile, paymentMethod, screenshotBase64, activeItems, totalQty, grandTotal) {
   let tbodyHTML = "";
   activeItems.forEach(item => {
-    // If it's Sika Atta Sattu / Sika Hua Sattu we prepend the category name to the first column if needed,
-    // but just productName (category) is cleaner and standard.
     let displayName = `${item.productName} (${item.category})`;
     tbodyHTML += `
           <tr>
@@ -418,13 +486,15 @@ function generateBill() {
           </tr>`;
   });
 
-  currentGeneratedHTML = `
+  const billHTML = `
     <div class="bill-container">
-      <h2 class="bill-title">Order Bill</h2>
+      <h2 class="bill-title">Order Receipt</h2>
       <p class="bill-details">
+        <strong>Order ID:</strong> ${orderId}<br>
         <strong>Name:</strong> ${custName}<br>
-        <strong>Mobile:</strong> ${custMobile || 'N/A'}<br>
-        <strong>Khetra:</strong> ${khetra}
+        <strong>Mobile:</strong> ${custMobile}<br>
+        <strong>Khetra:</strong> ${khetra}<br>
+        <strong>Payment Method:</strong> ${paymentMethod}
       </p>
       <table class="bill-table" border="1" cellpadding="6" cellspacing="0" style="width:100%; border-collapse: collapse;">
         <thead style="background-color: #f2f2f2;">
@@ -446,52 +516,59 @@ function generateBill() {
           </tr>
         </tfoot>
       </table>
-      
-      <!-- Payment QR Code inside Bill -->
-      <div class="bill-qr-container" style="margin-top: 20px; text-align: center; border-top: 1px dashed #ccc; padding-top: 15px;">
-        <p style="margin: 0 0 10px 0; font-size: 0.9rem; font-weight: bold; color: var(--text-dark);">Scan QR Code to Pay (${khetra})</p>
-        <img src="${khetraQRCodes[khetra] || ''}" alt="Payment QR Code" style="width: 120px; height: 120px; border: 1px solid #ddd; border-radius: 8px; padding: 4px; background: white;">
-      </div>
     </div>
   `;
 
-  // Insert into modal and open
-  document.getElementById("modal-bill-body").innerHTML = currentGeneratedHTML;
-  document.getElementById("bill-modal").style.display = "flex";
-
-  // Log to history
-  const orderId = "ORD-" + Math.floor(100000 + Math.random() * 900000);
-  activeOrderId = orderId; // Set active order ID for WhatsApp sharing
   const newOrder = {
     id: orderId,
     khetra: khetra,
     customer: custName,
-    mobile: custMobile || 'N/A',
+    mobile: custMobile,
+    paymentMethod: paymentMethod,
+    screenshot: screenshotBase64,
     qty: totalQty,
     total: grandTotal,
     items: activeItems,
-    html: currentGeneratedHTML,
+    html: billHTML,
     timestamp: new Date().toLocaleString()
   };
 
   orderHistory.unshift(newOrder);
   localStorage.setItem("order_history_teej", JSON.stringify(orderHistory));
-  updateHistoryTable();
+  
+  if (isAdminLoggedIn) {
+    updateHistoryTable();
+  }
+
+  // Show receipt modal
+  activeOrderId = orderId;
+  currentGeneratedHTML = billHTML;
+  document.getElementById("modal-bill-body").innerHTML = billHTML;
+  document.getElementById("bill-modal").style.display = "flex";
+
+  // Reset form inputs (without using resetForm which prompts confirm)
+  cart = {};
+  document.querySelectorAll(".qty-input").forEach(input => {
+    input.value = 0;
+    const counter = input.closest(".qty-counter");
+    if (counter) {
+      counter.style.background = "";
+      counter.style.border = "";
+    }
+  });
+  document.querySelectorAll(".qty-warning").forEach(warning => warning.style.display = "none");
+  document.getElementById("customer-name").value = "";
+  document.getElementById("customer-mobile").value = "";
+  document.getElementById("payment-method").value = "Cash on Delivery";
+  togglePaymentScreenshot();
+  calculateTotals();
+
+  alert("Order Submitted Successfully!");
 }
 
 // Close Modal
 function closeModal() {
   document.getElementById("bill-modal").style.display = "none";
-}
-
-// Copy Bill HTML code to clipboard
-function copyBillHTML() {
-  if (!currentGeneratedHTML) return;
-  navigator.clipboard.writeText(currentGeneratedHTML.trim()).then(() => {
-    alert("Bill HTML copied to clipboard! You can paste it into Column AQ in Excel.");
-  }).catch(err => {
-    console.error("Could not copy text: ", err);
-  });
 }
 
 // Print Bill
@@ -513,12 +590,13 @@ function resetForm() {
 // Update Dashboard History Table
 function updateHistoryTable() {
   const tbody = document.getElementById("history-table-body");
+  if (!tbody) return;
   tbody.innerHTML = "";
 
   if (orderHistory.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" style="text-align: center; color: var(--text-light);">No orders placed in this session.</td>
+        <td colspan="9" style="text-align: center; color: var(--text-light);">No orders placed in this session.</td>
       </tr>
     `;
     return;
@@ -526,15 +604,24 @@ function updateHistoryTable() {
 
   orderHistory.forEach(order => {
     const row = document.createElement("tr");
+    
+    // Screenshot cell
+    let screenshotHTML = "-";
+    if (order.screenshot) {
+      screenshotHTML = `<a href="${order.screenshot}" target="_blank"><img src="${order.screenshot}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc; display: block; margin: 0 auto; cursor: pointer;" alt="Receipt"></a>`;
+    }
+    
     row.innerHTML = `
       <td>${order.id}</td>
       <td>${order.khetra || order.taker || ""}</td>
       <td>${order.customer}</td>
       <td>${order.mobile}</td>
+      <td>${order.paymentMethod || "Cash on Delivery"}</td>
+      <td style="text-align: center;">${screenshotHTML}</td>
       <td>${order.qty} packs</td>
       <td>₹${order.total.toFixed(2)}</td>
       <td class="action-links">
-        <span class="action-link" onclick="viewHistoryOrder('${order.id}')">View Bill</span>
+        <span class="action-link" onclick="viewHistoryOrder('${order.id}')">View Detail</span>
         <span class="action-link" style="color: #ef4444;" onclick="deleteHistoryOrder('${order.id}')">Delete</span>
       </td>
     `;
@@ -546,44 +633,11 @@ function updateHistoryTable() {
 function viewHistoryOrder(orderId) {
   const order = orderHistory.find(o => o.id === orderId);
   if (order) {
-    activeOrderId = orderId; // Set active order ID for WhatsApp sharing
+    activeOrderId = orderId;
     currentGeneratedHTML = order.html;
-    document.getElementById("modal-bill-body").innerHTML = currentGeneratedHTML;
+    document.getElementById("modal-bill-body").innerHTML = order.html;
     document.getElementById("bill-modal").style.display = "flex";
   }
-}
-
-// Send bill details via WhatsApp
-function sendWhatsApp() {
-  const orderId = activeOrderId || (orderHistory.length > 0 ? orderHistory[0].id : null);
-  if (!orderId) {
-    alert("No order selected to send.");
-    return;
-  }
-  const order = orderHistory.find(o => o.id === orderId);
-  if (!order) {
-    alert("Order not found.");
-    return;
-  }
-  
-  let msg = `*Teej Order Details*\n`;
-  msg += `*Order ID:* ${order.id}\n`;
-  msg += `*Khetra:* ${order.khetra}\n`;
-  msg += `*Customer Name:* ${order.customer}\n`;
-  msg += `*Mobile:* ${order.mobile}\n`;
-  msg += `*Date/Time:* ${order.timestamp}\n\n`;
-  msg += `*Products Ordered:*\n`;
-  
-  order.items.forEach(item => {
-    msg += `- ${item.productName} (${item.measure}) x ${item.quantity} = ₹${item.amount.toFixed(2)}\n`;
-  });
-  
-  msg += `\n*Total Qty:* ${order.qty} packs\n`;
-  msg += `*Total Cost:* ₹${order.total.toFixed(2)}`;
-  
-  const encodedMsg = encodeURIComponent(msg);
-  const url = `https://api.whatsapp.com/send?text=${encodedMsg}`;
-  window.open(url, '_blank');
 }
 
 // Delete order from local session history
@@ -602,9 +656,7 @@ function exportHistoryCSV() {
     return;
   }
 
-  // To match a Google Form response sheet structure:
   // Headers: Timestamp, Person Taking Order, Customer Name, Mobile Number, Product1_Size1, Product1_Size2...
-  // Let's dynamically construct headers from all products/measures in catalog
   let productHeaders = [];
   
   // Ready Atta Sattu
@@ -623,7 +675,7 @@ function exportHistoryCSV() {
   let csvRows = [];
   
   // Header row
-  let headerRow = ["Timestamp", "Khetra", "Customer Name", "Mobile Number"].concat(productHeaders).concat(["Total Packs", "Total Cost"]);
+  let headerRow = ["Timestamp", "Khetra", "Customer Name", "Mobile Number", "Payment Method", "Screenshot Attached"].concat(productHeaders).concat(["Total Packs", "Total Cost"]);
   csvRows.push(headerRow.map(h => `"${h}"`).join(","));
 
   // Data rows
@@ -632,12 +684,13 @@ function exportHistoryCSV() {
       order.timestamp,
       order.khetra || order.taker || "",
       order.customer,
-      order.mobile
+      order.mobile,
+      order.paymentMethod || "Cash on Delivery",
+      order.screenshot ? "Yes" : "No"
     ];
 
     // For each product header, check quantity in order items
     productHeaders.forEach(header => {
-      // Find corresponding item in order items
       const foundItem = order.items.find(item => {
         const itemHeader = `${item.category} - ${item.productName} (${item.measure})`;
         return itemHeader === header;
