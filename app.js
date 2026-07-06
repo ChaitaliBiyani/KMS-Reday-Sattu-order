@@ -91,7 +91,7 @@ let activeOrderId = "";
 let isAdminLoggedIn = false;
 
 // Google Apps Script Web App URL for sending email receipts & saving to Google Sheet
-const googleScriptURL = "https://script.google.com/macros/s/YOUR_DEPLOYED_ID/exec";
+const googleScriptURL = "https://script.google.com/macros/s/AKfycbxtPuhBKquUi2o1mG0AwQKZBfvQMzl934xMIu_m3Ds-0rCPIAONQ7uJUxH5KX0KZNgfuw/exec";
 
 // Open/initialize IndexedDB for storing payment screenshots safely (unlimited quota)
 let db;
